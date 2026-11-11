@@ -1,0 +1,49 @@
+# Directory of a fetched oracle corpus (tools/fetch-fixtures), skipping the
+# calling test when it is absent.
+fixture_dir <- function(name) {
+  dir <- test_path("fixtures", name)
+  if (!dir.exists(dir)) {
+    msg <- paste0("fixtures/", name, " not fetched; run tools/fetch-fixtures")
+    require_oracles(msg)
+    skip(msg)
+  }
+  dir
+}
+
+# The oracles job (oracles.yaml) sets ZUMIME_REQUIRE_ORACLES=true: there a
+# missing fixture directory or source tree is a failure, not a skip, so a
+# broken fetch cannot turn the job into skips that stay green.
+require_oracles <- function(msg) {
+  if (identical(Sys.getenv("ZUMIME_REQUIRE_ORACLES"), "true")) {
+    stop(msg, call. = FALSE)
+  }
+}
+
+# A package an oracle needs: a failure under require_oracles(), a skip
+# otherwise.
+skip_if_not_oracle_package <- function(pkg) {
+  if (!requireNamespace(pkg, quietly = TRUE)) {
+    msg <- paste0(pkg, " is needed to read the oracle")
+    require_oracles(msg)
+    skip(msg)
+  }
+}
+
+# The WPT mime-types entries as a list of list(input, output). An input
+# holding U+0000 cannot be an R string, so those entries are dropped and
+# counted in attr(, "dropped").
+wpt_mime_entries <- function(file) {
+  skip_if_not_oracle_package("zujson")
+  text <- paste(
+    readLines(file, warn = FALSE, encoding = "UTF-8"),
+    collapse = "\n"
+  )
+  text <- gsub("\\u0000", "<<NUL>>", text, fixed = TRUE)
+  entries <- Filter(is.list, zujson::json_parse(text, simplify = FALSE))
+  nul <- vapply(
+    entries,
+    function(e) grepl("<<NUL>>", e$input, fixed = TRUE),
+    logical(1)
+  )
+  structure(entries[!nul], dropped = sum(nul))
+}
